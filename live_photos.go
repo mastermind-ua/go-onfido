@@ -1,7 +1,11 @@
 package onfido
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"io"
+	"mime/multipart"
 	"time"
 )
 
@@ -24,6 +28,47 @@ type LivePhotoIter struct {
 // LivePhoto returns the current item in the iterator as a LivePhoto.
 func (i *LivePhotoIter) LivePhoto() *LivePhoto {
 	return i.Current().(*LivePhoto)
+}
+
+func (c *Client) UploadLivePhoto(ctx context.Context, applicantID string, file io.ReadSeeker) (*LivePhoto, error) {
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	part, err := createFormFile(writer, "file", file)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := io.Copy(part, file); err != nil {
+		return nil, err
+	}
+	if err := writer.WriteField("applicant_id", applicantID); err != nil {
+		return nil, err
+	}
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+
+	req, err := c.newRequest("POST", "/live_photos", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	if err != nil {
+		return nil, err
+	}
+
+	var resp LivePhoto
+	_, err = c.do(ctx, req, &resp)
+
+	return &resp, err
+}
+
+func (c *Client) GetLivePhoto(ctx context.Context, id string) (*LivePhoto, error) {
+	req, err := c.newRequest("GET", "/live_photos/"+id, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp LivePhoto
+	_, err = c.do(ctx, req, &resp)
+	return &resp, err
 }
 
 // ListPhotos retrieves the list of photos for the provided applicant.
